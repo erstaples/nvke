@@ -218,3 +218,33 @@ func TestScrubDoesNotEditConfig(t *testing.T) {
 		t.Errorf("mentions changed from %v to %v", before, got)
 	}
 }
+
+// Every family of Slack token is removed, not only the xox- ones, wherever it
+// appears in a message.
+func TestScrubCoversEveryTokenFamily(t *testing.T) {
+	tokens := map[string]string{
+		"bot":                "xoxb-123456789012-abcdefABCDEF",
+		"user":               "xoxp-123456789012-abcdefABCDEF",
+		"workspace":          "xoxa-2-abcdefABCDEF",
+		"refresh":            "xoxr-abcdefABCDEF",
+		"config":             "xoxe-1-abcdefABCDEF",
+		"app-level":          "xapp-1-A0123456789-1234567890-abcdefABCDEF",
+		"rotating user":      "xoxe.xoxp-1-abcdefABCDEF",
+		"rotating app-level": "xoxe.xapp-1-A0123456789-1-abcdefABCDEF",
+		"rotating bot":       "xoxe.xoxb-1-abcdefABCDEF",
+	}
+	for name, token := range tokens {
+		t.Run(name, func(t *testing.T) {
+			m := Message{Title: "t " + token, Body: "before " + token + " after", Mentions: []string{"<!here> " + token}}
+			(&Notifier{}).scrub(&m)
+			for _, field := range []string{m.Title, m.Body, strings.Join(m.Mentions, " ")} {
+				if strings.Contains(field, "abcdefABCDEF") || strings.Contains(field, "xapp-") || strings.Contains(field, "xox") {
+					t.Errorf("%s token left in %q", name, field)
+				}
+			}
+			if !strings.Contains(m.Body, "before "+redacted+" after") {
+				t.Errorf("Body = %q, want only the token replaced", m.Body)
+			}
+		})
+	}
+}
